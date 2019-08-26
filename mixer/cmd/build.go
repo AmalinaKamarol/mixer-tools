@@ -611,7 +611,7 @@ flag --to. The target version must be newer than the --from version.
 var buildUpgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Build all upgrade content for your mix",
-	Long: `Build all upgrade content for your mix`,
+	Long: `Build all upgrade content for your mix. Yada yada yada`,
 	Run: func(cmd *cobra.Command, args []string) {
 	},
 }
