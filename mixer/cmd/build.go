@@ -579,6 +579,43 @@ flag --to. The target version must be larger than the --from version.
 	RunE: runBuildDeltaManifests,
 }
 
+var buildUpgradeDeltaManifestsCmd = &cobra.Command{
+	Use:   "upgrade-delta-manifests",
+	Short: "Build delta manifests used to optimize upgrade between LTS versions",
+	Long: `Build delta manifests used to optimize upgrade between LTS versions
+
+When a swupd client updates content, it uses manifest files to get file
+metadata. If the current version manifests already exists on the system
+and the delta manifest files are available on the server, the client will
+attempt to apply the delta manifests to create the new version manifests
+rather than downloading the full manifest directly. If a bundle hasn't changed
+between two versions, no delta manifest needs to be generated.
+
+To generate the delta manifests to optimize upgrade from VER to the current mix
+version use
+
+    mixer build upgrade-delta-manifests --from VER
+
+Alternatively, to generate delta manifests for a set of NUM previous versions,
+each one to the current mix version, instead of --from use
+
+    mixer build upgrade-delta-manifests --previous-versions NUM
+
+To change the target version (by default the current version), use the
+flag --to. The target version must be newer than the --from version.
+
+`,
+	RunE: runBuildUpgradeDeltaManifests,
+}
+
+var buildUpgradeCmd = &cobra.Command{
+	Use:   "upgrade",
+	Short: "Build all upgrade content for your mix",
+	Long: `Build all upgrade content for your mix`,
+	Run: func(cmd *cobra.Command, args []string) {
+	},
+}
+
 var buildDeltaPacksFlags struct {
 	previousVersions uint32
 	from             uint32
@@ -590,6 +627,16 @@ var buildDeltaManifestsFlags struct {
 	previousVersions uint32
 	from             uint32
 	to               uint32
+}
+
+var buildUpgradeDeltaManifestsFlags struct {
+	from		 string
+	fromBranch	 string
+	fromVer		 uint32
+	to		 string
+	toBranch	 string
+	toVer		 uint32
+	sourceDir	 string
 }
 
 func runBuildDeltaPacks(cmd *cobra.Command, args []string) error {
@@ -635,6 +682,65 @@ func runBuildDeltaManifests(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		fail(err)
 	}
+	return nil
+}
+
+func runBuildUpgradeDeltaManifests(cmd *cobra.Command, args []string) error {
+	fromDirSet := cmd.Flags().Changed("from")
+	toDirSet := cmd.Flags().Changed("to")
+	if !fromDirSet || !toDirSet {
+		return errors.Errorf("either --from or --to must be set")
+	}
+
+	fromDir := strings.Split(buildUpgradeDeltaManifestsFlags.fromDir, "/")
+	lenFd := len(fromDir)
+	fmt.Println("From: ", fromDir)
+
+	toDir := strings.Split(buildUpgradeDeltaManifestsFlags.toDir, "/")
+	lenTd := len(toDir)
+	fmt.Println("To: ", toDir)
+
+	fromVer, err := strconv.ParseUint(fromDir[lenFd-1], 10, 32)
+	if err != nil {
+		return errors.Errorf("Couldn't find version number in --from: '%s'", buildUpgradeDeltaManifestsFlags.fromDir)
+	}
+	toVer, err := strconv.ParseUint(toDirs[lenTd-1], 10, 32)
+	if err != nil {
+		return errors.Errorf("Couldn't find version number in --to: '%s'", buildUpgradeDeltaManifestsFlags.toDir)
+	}
+
+	buildUpgradeDeltaManifestsFlags.fromVer = uint32(fromVer)
+	buildUpgradeDeltaManifestsFlags.toVer = uint32(toVer)
+	buildUpgradeDeltaManifestsFlags.fromBranch = fromDir[lenFd-4]
+	buildUpgradeDeltaManifestsFlags.toBranch = toDir[lenTd-4]
+	buildUpgradeDeltaManifestsFlags.sourceDir = fmt.Sprintf(
+		"%s/%s_%d/",
+		strings.Join(fromDir, "/"),
+		buildUpgradeDeltaManifestsFlags.toBranch,
+		buildUpgradeDeltaManifestsFlags.toVer)
+	fmt.Printf("Output directory: '%s'\n", buildUpgradeDeltaManifestsFlags.sourceDir)
+
+	fromConfig := strings.Join(fromDir[0:lenFd-3], "/") + "/builder.conf"
+	toConfig := strings.Join(toDir[0:lenTd-3], "/") + "/builder.conf"
+	fmt.Println(fromConfig)
+	fmt.Println(toConfig)
+	b, err := builder.NewFromConfig(toConfig)
+	if err != nil {
+		fail(err)
+	}
+	setWorkers(b)
+	err = b.BuildUpgradeManifests(
+		buildUpgradeDeltaManifestsFlags.from,
+		fromDir[lenFd-1],
+		strings.Join(fromDir[0:lenFd-2], "/"),
+		buildUpgradeDeltaManifestsFlags.to,
+		toDir[lenTd-1],
+		strings.Join(toDir[0:lenTd-2], "/"),
+		buildUpgradeDeltaManifestsFlags.targetDir)
+	if err != nil {
+		fail(err)
+	}
+
 	return nil
 }
 
